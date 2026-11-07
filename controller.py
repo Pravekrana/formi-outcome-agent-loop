@@ -275,7 +275,7 @@ class Controller:
           AND created_ts>=?''',(wf,cutoff)).fetchone()[0]
         return count<min(2,policy['max_requests_per_24h'])
 
-    def propose(self,wf,ts,cfg,summary,diff,rationale,impact=0.2,evidence=None,original_cfg=None):
+    def propose(self,wf,ts,cfg,summary,diff,rationale,impact=0.05,evidence=None,original_cfg=None):
         cur=self.request('GET',f'/workflows/{wf}/config').json()
         if original_cfg is not None and cur['config']!=original_cfg:
             return

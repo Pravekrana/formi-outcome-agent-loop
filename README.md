@@ -176,3 +176,22 @@ thing you cut.
 - If something is ambiguous, **state your assumption in `SUBMISSION.md` and proceed**. Don't wait for an
   answer. Questions are welcome but won't block you.
 - Don't share the assignment or your solution publicly.
+
+## Submitted controller
+
+The controller is [`controller.py`](controller.py). It talks to the simulator only through HTTP, streams NDJSON chunks, and keeps aggregate outcomes, checkpoints, proposals, approvals, and change events in SQLite WAL. It does not import `sim` or inspect scenario files or run directories. The Python dependencies are `httpx` for the controller and the dependencies in `requirements.txt` for the provided simulator.
+
+```mermaid
+flowchart LR
+  API[Simulator HTTP API] --> ING[Chunk streamer]
+  ING --> DB[(SQLite WAL: checkpoint, aggregates, audit)]
+  DB --> DEC[Incident and experiment decisions]
+  DEC --> GOV[Approval or permitted auto apply]
+  GOV --> API
+  API --> MON[Post-change monitoring]
+  MON --> DB
+```
+
+On Linux, install normally with `python -m pip install -r requirements.txt`, start a simulator with `python -m sim serve --scenario scenarios/public_01_dev.yaml --run-dir runs/dev`, and run `./run.sh http://127.0.0.1:8700`. Set `FORMI_DB=state/dev.sqlite3` to choose a separate persistent database per simulator run. Do not reuse one database across independent worlds. The controller exits when `/sim/state` reports completion. Run `python -m pytest -q tests` for tests and `python audit.py ks_cancel --db state/dev.sqlite3` for an audit trail. See [operations](docs/OPERATIONS.md) for incident and recovery procedures.
+
+The controller currently handles global workflow allocations. Cohort-specific learning, call-time optimization, and automatic rollback are deferred and described in [SUBMISSION.md](SUBMISSION.md). `python recovery_demo.py` performs a real kill/restart test against a fresh public_01 simulator and the same SQLite database. Reports are in `reports/`; each report states whether its measurements correspond to the current controller revision.
