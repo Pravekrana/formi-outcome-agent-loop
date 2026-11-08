@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -39,8 +40,11 @@ def main():
     run_dir.parent.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     client = httpx.Client(base_url=args.url, timeout=10)
+    parsed = urlparse(args.url)
+    if parsed.hostname not in ('127.0.0.1', 'localhost') or not parsed.port:
+        raise SystemExit('--url must name a loopback host and explicit port')
     server = subprocess.Popen([sys.executable, '-m', 'sim', 'serve', '--scenario',
-                               args.scenario, '--run-dir', str(run_dir)],
+                               args.scenario, '--run-dir', str(run_dir), '--port', str(parsed.port)],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     controller = None
     try:
@@ -52,8 +56,10 @@ def main():
             state = client.get('/sim/state').json()
             if controller.poll() is not None:
                 raise RuntimeError('controller exited before kill: ' + controller.stderr.read()[-1500:])
-            return state if state['sim_minute'] >= 720 else None
-        before = wait_until(progressed)
+            pending = [a['proposal_id'] for a in client.get('/approvals',
+                       params={'status': 'pending'}).json()]
+            return (state, pending) if pending else None
+        before, pending_before = wait_until(progressed)
         controller.kill()
         controller.wait(timeout=30)
         with sqlite3.connect(db_path) as db:
@@ -73,7 +79,8 @@ def main():
                                       GROUP BY proposal_id HAVING COUNT(*)>1''').fetchall()
         approvals = client.get('/approvals').json()
         proposal_ids = [a['proposal_id'] for a in approvals]
-        result = {'killed_at_minute': before['sim_minute'], 'checkpoint_before': checkpoint_before,
+        result = {'killed_at_minute': before['sim_minute'], 'pending_at_kill': pending_before,
+                  'checkpoint_before': checkpoint_before,
                   'checkpoint_after': checkpoint_after, 'finished': after['finished'],
                   'controller_exit': controller.returncode, 'actions': len(actions),
                   'duplicate_local_ids': duplicated,

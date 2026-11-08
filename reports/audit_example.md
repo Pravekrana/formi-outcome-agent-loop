@@ -19,3 +19,11 @@ GROUP BY c.event_id ORDER BY c.version;
 ```
 
 Version 3 had a named approval. Version 4 used policy-permitted auto apply during a caller-ID incident; its 400 dials yielded 70 pickups and 35 engagements before the next version. These counts describe what happened, without claiming that the version alone caused the difference. `python audit.py ks_cancel --db state/mine02b.sqlite3` prints each action's rationale and diff alongside the actor and approval ID.
+
+The same command's actual prompt-repair record is:
+
+```json
+{"actor":"controller_approved","applied_ts":"2027-01-07T18:00:00+05:30","approval_id":"apr_00005","change_summary":"Validated response to hallucination incident","diff":{"prompt_version":{"new":"P3","old":"P2"}},"evidence":{"validation_run_id":"val_00002"},"proposal_id":"5f11eabb-125a-4b4d-a809-db1f8d8d077a","rationale":"Observed detector flags 15/325 connected calls; validation 0.992.","status":"applied","version":8}
+```
+
+It shows why the prompt changed, the validation evidence, the approval authorizing it, and the applied version. The official public_02 grade subsequently measured 70 hallucinated `ks_cancel` calls over the complete run versus 330 baseline; that is whole-run outcome evidence, not a version-isolated causal estimate.
