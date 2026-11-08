@@ -4,7 +4,7 @@
 
 ## 0. TL;DR
 
-The controller streams event chunks into transactional aggregates, detects caller-ID and hallucination incidents, runs cautious workflow-level experiments, and routes changes through the simulator's governance API. The original public_01 run graded at +2.4% aggregate conclusion-rate lift; an earlier public_02 run graded at +4.2% but missed the prompt incident. The corrected public_02 run finished, but its grader could not be executed in the restricted terminal environment. Cohort optimization, call-time tuning, and automatic rollback were deferred.
+The controller streams event chunks into transactional aggregates, detects caller-ID and hallucination incidents, runs cautious workflow-level experiments, and routes changes through the simulator's governance API. The original public_01 run graded at +2.4% aggregate conclusion-rate lift. The corrected public_02 run graded at +8.1%, including a validated and approved prompt fix; its hallucinated calls fell to 167 versus 416 baseline. Cohort optimization, call-time tuning, and automatic rollback were deferred.
 
 ## 1. Assumptions
 
@@ -22,19 +22,19 @@ The controller streams event chunks into transactional aggregates, detects calle
 
 | # | Capability | Status | Why / what remains |
 |---|---|---|---|
-| C1 | Incremental ingestion | Partial | Streaming, aggregate storage, transactional checkpoints implemented; public_03 throughput unmeasured. |
+| C1 | Incremental ingestion | Built | Streamed 7.43 million calls in public_03; 13,958 ingest-only calls/s with a 242 KB aggregate database. |
 | C2 | Shared cohorts | Partial | Stores event cohort IDs; no lead-feature joins or new cohort construction. |
 | C3 | History bootstrap | Built | Reads history chunks before live events. |
 | C4 | Call-time optimization | Cut | No defensible per-person timing estimate in scope; add bounded person aggregates and holdout. |
 | C5 | Caller-ID health | Built | Population thresholds, conservative pickup comparison, guarded rotation. |
 | C6 | Welcome/voice experiments | Partial | 80/20 control allocation and conservative winner gate; no interaction model. |
 | C7 | Promotion/rollback | Partial | Promotion gate and followup monitoring; automatic rollback deferred. |
-| C8 | Hallucination response | Partial | Detect, suggest, validate, propose, and followup implemented; corrected run not graded. |
+| C8 | Hallucination response | Built | Corrected public_02 run graded; sequential detection calibration remains open. |
 | C9 | Governance lifecycle | Partial | Intent/reconcile/apply/stale/expiry support; no multi-dimension batching. |
 | C10 | Impact and dry run | Partial | Observed evidence and batch-size estimate; no causal replay. |
 | C11 | Supervisor view | Cut | Audit CLI is the interim interface. |
 | C12 | Audit store | Built | Local actions, approvals, changes, observations, and post-change aggregates. |
-| C13 | Crash recovery | Partial | Durable design implemented; actual kill/restart evidence pending Python access. |
+| C13 | Crash recovery | Partial | Two real kill/restarts passed, including one with a pending approval; write-boundary fault matrix remains. |
 | C14 | Loop observability | Partial | Per-chunk ingest timing and incident observations; no alert exporter. |
 | C15 | Fair allocation | Cut | Global credit floor only; needs per-tenant budget policy. |
 
@@ -56,9 +56,9 @@ Accepted the need for validation evidence, approval records, and post-change vis
 
 ### 03 — Platform/SRE
 
-Accepted durable checkpoints, idempotent proposal intents, bounded aggregates, and actionable failure signals. SQLite WAL adds no service to operate in this simulator, though production would likely move the same tables to the existing Postgres. The requested 4-vCPU/8-GB load result and kill/restart demonstration remain unmeasured; they are not claimed as passed.
+Accepted durable checkpoints, idempotent proposal intents, bounded aggregates, and actionable failure signals. SQLite WAL adds no service to operate in this simulator, though production would likely move the same tables to the existing Postgres. Two real kill/restart tests passed, including a pending-approval crash. The public_03 benchmark passed the average wall-time target on a 12-logical-CPU host; the specified 4-vCPU/8-GB envelope was not directly tested.
 
-**Reply:** The controller records a chunk and its checkpoint in one transaction, then reconciles uncertain writes from simulator state. It does not retain raw calls. I have documented the restart procedure and the alerts that merit paging. The load target and kill/restart test need a working Python terminal before I can give you honest numbers; I will not substitute estimates for those measurements.
+**Reply:** The controller records a chunk and its checkpoint in one transaction, then reconciles uncertain writes from simulator state. It does not retain raw calls. I have documented the restart procedure and the alerts that merit paging. Both real kill/restart tests finished without duplicate proposal IDs, including a pending approval. The measured load run averaged 3.79 controller minutes per simulated day on this host; I cannot claim the 4-vCPU/8-GB envelope passed without constraining it.
 
 ### 04 — Kestrel Operations Supervisor
 
@@ -121,15 +121,15 @@ Approval requests are sent only from 11:00 until at least an hour before the wor
 
 Caller-ID degradation uses 150 dials per arm and separated conservative pickup intervals before shifting. Hallucination detection requires 80 connected calls on the current prompt and a `z=2.4` lower Wilson bound above both 2.5% and the preceding rate plus 1.2 percentage points. The detector has no calibrated fixed false-positive rate under hourly monitoring; the population and margin reduce single-call reactions. A one-day per-workflow/prompt cooldown prevents repeated credit spend. The controller requires at least eight remaining credits, asks for suggestions, favors a suggestion with observed engagement history, validates 500 synthetic conversations, and requires the workflow's minimum pass rate before proposing a prompt with `validation_run_id`. It monitors actual outcomes after application.
 
-The first public_02 grade showed the failure clearly: the bad prompt remained live, 0 LLM calls and 0 validations occurred, and `ks_cancel` had 337 flagged calls versus 330 baseline. The threshold was then corrected and a second run finished. The corrected run's official grade and incident timeline remain pending because the terminal Python interpreter became inaccessible. No claim of a successful prompt fix is made here.
+The first public_02 grade showed the failure clearly: the bad prompt remained live, 0 LLM calls and 0 validations occurred, and `ks_cancel` had 337 flagged calls versus 330 baseline. After the threshold correction, the second run's official grade recorded one LLM fix call, two validation runs, an approved prompt change, and 70 flagged `ks_cancel` calls versus 330 baseline. The supervisor-edit incident was fixed by a controller-approved change in 390 simulated minutes. This run predates later reliability edits, so it is evidence for the detector correction, not a complete revalidation of every current code path.
 
 ## 8. Scale
 
-The public_03_load benchmark was not run. No events/sec, peak memory, decision lag, or simulated-day wall-clock number is fabricated; see `reports/public_03_load.md`. The aggregate key cardinality is bounded by workflows × days × versions × cohorts × dimensions × options rather than calls. Network transfer and JSON parsing are likely first at 10×, followed by SQLite's single writer and per-workflow API polling. Partitioning by tenant or workflow with separate consumers and a shared transactional store would be the production path. The 4-vCPU/8-GB, ten-minute target is unverified.
+The one-time public_03 load run completed five simulated days in 1,135.78 controller seconds after 255.27 seconds of simulator startup/history generation, or 227.16 controller seconds per simulated day on average. It ingested 7,433,295 calls in 88 chunks at 13,958.47 ingest-only calls/s, ending with a 241,664-byte SQLite database. The host had 12 logical CPUs and 16.85 GB RAM; peak sampled server/controller process working sets were 685/38 MB. This does **not** verify the 4-vCPU/8-GB constraint or each individual day's wall time. The official load grade found +0.9% aggregate conclusion-rate change, 16 neutral and zero harmful changes, and no apply conflicts. See `reports/public_03_load.md` and `reports/public_03_grade.md`. The aggregate key cardinality is bounded by workflows × days × versions × cohorts × dimensions × options rather than calls. Network transfer and JSON parsing are likely first at 10×, followed by SQLite's single writer and per-workflow API polling. Partitioning by tenant or workflow with separate consumers and a shared transactional store would be the production path.
 
 ## 9. Reliability
 
-The checkpoint and aggregates commit in one SQLite transaction. Replaying a committed chunk returns without double counting. A write intent is saved before the HTTP call; a missing response causes reconciliation, not blind non-idempotent retry. `/sim/advance` is reread after an ambiguous result. A 5xx GET is retried with bounded backoff, while a write error is treated as ambiguous. A 4xx is recorded on an action or raised on an unexpected advance. These behaviors have unit tests, but pytest and a real kill/restart run remain blocked by terminal Python access; see `reports/crash_recovery.md`. No durability claim beyond the implementation is represented as a measured result.
+The checkpoint and aggregates commit in one SQLite transaction. Replaying a committed chunk returns without double counting. A write intent is saved before the HTTP call; a missing response causes reconciliation, not blind non-idempotent retry. `/sim/advance` is reread after an ambiguous result. A 5xx GET is retried with bounded backoff, while a write error is treated as ambiguous. A 4xx is recorded on an action or raised on an unexpected advance. `python -m pytest tests -q` passed 10 tests on Python 3.12.10. Two real kill/restarts finished, one with a pending approval; see `reports/crash_recovery.md`. A full fault-injection matrix is not claimed.
 
 ## 10. Audit & observability
 
@@ -139,7 +139,7 @@ The checkpoint and aggregates commit in one SQLite transaction. Replaying a comm
 
 ## 11. Results
 
-These are official grader summaries from the earlier controller revision. The current revision requires fresh grading, so they are evidence of earlier behavior only.
+These are official grader summaries. The public_01 run used an earlier revision; the corrected public_02 run includes the hallucination detector fix but predates subsequent reliability edits.
 
 | Scenario/workflow | Conclusion rate | Relative change | Pickup change | Engagement change | Flagged calls (baseline) |
 |---|---:|---:|---:|---:|---:|
@@ -147,12 +147,13 @@ These are official grader summaries from the earlier controller revision. The cu
 | public_01 nw_kyc | 0.355 | -2.4% | -0.9% | -1.4% | 18 (21) |
 | public_01 nw_renewal | 0.429 | +2.2% | +0.7% | +1.6% | 42 (42) |
 | public_01 ALL | 0.377 | +2.4% | +1.3% | +0.9% | 109 (110) |
-| public_02 ks_cancel | 0.270 | +9.1% | +8.3% | -0.3% | 337 (330) |
-| public_02 nw_kyc | 0.380 | +1.5% | +1.3% | +0.6% | 39 (31) |
-| public_02 nw_renewal | 0.434 | +1.7% | -0.1% | +1.3% | 56 (55) |
-| public_02 ALL | 0.348 | +4.2% | +3.4% | +0.3% | 432 (416) |
+| public_02 ks_cancel | 0.295 | +19.2% | +10.2% | +6.6% | 70 (330) |
+| public_02 nw_kyc | 0.387 | +3.2% | +1.4% | +2.3% | 32 (31) |
+| public_02 nw_renewal | 0.435 | +2.1% | +1.3% | +0.7% | 65 (55) |
+| public_02 ALL | 0.361 | +8.1% | +4.7% | +2.8% | 167 (416) |
+| public_03 ALL | 0.368 | +0.9% | +0.0% | +0.8% | 4718 (4729) |
 
-The first public_01 grader classified four changes neutral and no changes harmful. The first public_02 grader classified three caller-ID rotations beneficial and five changes neutral, but the `ks_cancel` engagement guardrail was slightly worse and the hallucination response failed. The corrected detector and guardrail gates must be regraded before claiming improvement. Aggregate lift does not excuse a harmful workflow outcome.
+The first public_01 grader classified four changes neutral and no changes harmful. The corrected public_02 grader classified four changes beneficial and five neutral, including a validated, approved prompt repair. It reported no governance rejections or apply conflicts. This run predates later reliability edits, so current-code outcome regression remains a limitation. Aggregate lift does not excuse a harmful workflow outcome.
 
 ## 12. Trade-offs & rejected alternatives
 
@@ -167,8 +168,8 @@ The first public_01 grader classified four changes neutral and no changes harmfu
 
 ## 13. Known weaknesses
 
-The corrected revision has not passed pytest or official grading in the present terminal. public_03 load and kill/restart are unmeasured. The experiment gate does not model welcome × voice interactions or all cohort disparities. The hallucination detector's sequential false-alarm rate is not calibrated. The workflow-level guardrail check can miss a small harmed subgroup. Approval requests are not batched across dimensions. The dry run is observational, impact scores are rough, and automatic rollback is absent. SQLite's single writer is a likely 10× bottleneck. The audit database is local, so production would need durable managed storage and retention policy.
+The current revision passed 10 pytest tests, and two real kill/restarts completed without duplicate proposal IDs. The corrected public_02 run was graded, though it predates later reliability edits. The public_03 average met ten minutes per simulated day on an unconstrained 12-logical-CPU host; the 4-vCPU/8-GB envelope and every individual day's latency remain unverified. The experiment gate does not model welcome × voice interactions or all cohort disparities. The hallucination detector's sequential false-alarm rate is not calibrated. The workflow-level guardrail check can miss a small harmed subgroup. Approval requests are not batched across dimensions. The dry run is observational, impact scores are rough, and automatic rollback is absent. SQLite's single writer is a likely 10× bottleneck. The audit database is local, so production would need durable managed storage and retention policy.
 
 ## 14. If this went to production at Formi next month
 
-In the first week, run the full load benchmark and repeated kill/restart tests on the stated hardware; correct any governance or harmful-change findings; calibrate incident thresholds and fixed experiment checkpoints against historical holdouts; and add a controlled rollback path with prompt revalidation. In the second week, move the audit schema to managed Postgres, partition consumers by tenant/workflow, add per-tenant credit and approval budgets, export actionable alerts, and conduct a client compliance review of auto-apply permissions before enabling live writes.
+In the first week, repeat the load benchmark under an enforced 4-vCPU/8-GB limit and record each simulated day's wall time; expand the kill/restart test into write-boundary fault injection; calibrate incident thresholds and fixed experiment checkpoints against historical holdouts; and add a controlled rollback path with prompt revalidation. In the second week, move the audit schema to managed Postgres, partition consumers by tenant/workflow, add per-tenant credit and approval budgets, export actionable alerts, and conduct a client compliance review of auto-apply permissions before enabling live writes.
